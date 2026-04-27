@@ -1,7 +1,23 @@
+import os
+import subprocess
+import sys
 import streamlit as st
+
+# --- الضربة القاضية: إجبار السيرفر على تثبيت المكتبات إذا نقصت ---
+def install_requirements():
+    try:
+        from supabase import create_client, Client
+        from streamlit_javascript import st_javascript
+    except ImportError:
+        # السيرفر مش لاقي المكتبات؟ نثبتهم يدوياً الآن
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "supabase", "streamlit-javascript"])
+        st.rerun() # إعادة تشغيل التطبيق بعد التثبيت
+
+install_requirements()
+
+# الآن نكمل الكود الطبيعي
 from supabase import create_client, Client
 from streamlit_javascript import st_javascript
-import pandas as pd
 
 # --- 1. الإعدادات والتعريفات ---
 VERSION = "0.2"
