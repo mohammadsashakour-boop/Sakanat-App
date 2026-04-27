@@ -1,155 +1,211 @@
 import streamlit as st
 from supabase import create_client, Client
 from streamlit_javascript import st_javascript
+import pandas as pd
 
-# --- 1. إعدادات الهوية ---
+# --- 1. الإعدادات والتعريفات ---
 VERSION = "0.1"
 DEV_NAME = "Mohammad-Sofian"
 
-st.set_page_config(page_title=f"سكنات شكّور v{VERSION}", layout="wide", page_icon="🏢")
+st.set_page_config(
+    page_title=f"سكنات شكّور v{VERSION}", 
+    layout="wide", 
+    page_icon="🏢"
+)
 
-# --- 2. جلب الإعدادات السرية ---
+# --- 2. جلب المفاتيح من الإعدادات السرية (Secrets) ---
 try:
     URL = st.secrets["SUPABASE_URL"]
     KEY = st.secrets["SUPABASE_KEY"]
     ADMIN_PWD = st.secrets["ADMIN_PASSWORD"]
 except:
-    st.error("⚠️ يرجى ضبط الإعدادات السرية (Secrets) في Streamlit Cloud.")
+    st.error("⚠️ خطأ: تأكد من ضبط Secrets (URL, KEY, ADMIN_PASSWORD) في Streamlit Cloud.")
     st.stop()
 
 supabase: Client = create_client(URL, KEY)
 
-# --- 3. لمسات CSS الجمالية ---
+# --- 3. تصميم الواجهة وجماليات CSS ---
 st.markdown(f"""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;700&display=swap');
     * {{ font-family: 'Cairo', sans-serif; direction: rtl; }}
     .main {{ background-color: #f4f7f9; }}
+    
+    /* تصميم بطاقة الطالبة */
     .student-card {{
         background: white; padding: 25px; border-radius: 15px;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.05); border-right: 8px solid #2E86C1;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.05); border-right: 10px solid #2E86C1;
         margin-bottom: 20px; transition: 0.3s;
     }}
     .student-card:hover {{ transform: translateY(-5px); box-shadow: 0 8px 25px rgba(0,0,0,0.1); }}
-    .dev-footer {{ text-align: center; color: #7f8c8d; padding: 20px; font-size: 14px; border-top: 1px solid #ddd; }}
+    
+    /* تذييل الصفحة */
+    .dev-footer {{ text-align: center; color: #7f8c8d; padding: 20px; font-size: 14px; border-top: 1px solid #ddd; margin-top: 50px; }}
+    
+    /* تحسين القائمة الجانبية للموبايل */
+    [data-testid="stSidebar"] {{ background-color: #ffffff; }}
     </style>
     """, unsafe_allow_html=True)
 
-# --- 4. نظام الدخول ---
+# --- 4. وظيفة تسجيل الدخول وتعقب الأجهزة (إصلاح اللوجز) ---
+def log_device_info():
+    # سحب معلومات الجهاز عبر JavaScript
+    ua = st_javascript("window.navigator.userAgent")
+    
+    # التأكد من وصول المعلومة وتسجيلها مرة واحدة فقط في الجلسة
+    if ua and ua != "null" and "logged_this_session" not in st.session_state:
+        device = "جهاز غير معروف"
+        if "iPhone" in str(ua): device = "iPhone 📱"
+        elif "Android" in str(ua): device = "Android 📱"
+        elif "Windows" in str(ua): device = "Windows PC 💻"
+        elif "Macintosh" in str(ua): device = "MacBook 💻"
+
+        try:
+            supabase.table("login_logs").insert({"device_info": device}).execute()
+            st.session_state["logged_this_session"] = True
+        except:
+            pass
+
+# --- 5. نظام الدخول والحماية ---
 if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
 
 if not st.session_state["logged_in"]:
-    st.markdown("<h1 style='text-align: center; color: #2E86C1;'>🏢 نظام سكنات شكّـــــــــــــــور</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 style='text-align: center; color: #2E86C1; margin-top: 50px;'>🏢 سكنات شكّـــــــــــــــور</h1>", unsafe_allow_html=True)
     col1, col2, col3 = st.columns([1,1.5,1])
     with col2:
-        pwd = st.text_input("🔑 كلمة المرور الإدارية", type="password")
-        if st.button("دخول للنظام", use_container_width=True):
-            if pwd == ADMIN_PWD:
-                st.session_state["logged_in"] = True
-                st.rerun()
-            else:
-                st.error("❌ كلمة المرور غير صحيحة")
+        with st.form("login_form"):
+            pwd = st.text_input("🔑 كلمة المرور الإدارية", type="password")
+            if st.form_submit_button("دخول للنظام", use_container_width=True):
+                if pwd == ADMIN_PWD:
+                    st.session_state["logged_in"] = True
+                    st.rerun()
+                else:
+                    st.error("❌ كلمة المرور غير صحيحة")
     st.markdown(f"<p style='text-align: center; color: gray;'>Version {VERSION} | Developed by {DEV_NAME}</p>", unsafe_allow_html=True)
     st.stop()
 
-# --- 5. جلب البيانات ---
+# تنفيذ تسجيل الجهاز بعد الدخول الناجح مباشرة
+log_device_info()
+
+# --- 6. جلب البيانات من السحابة ---
 @st.cache_data(ttl=5)
 def load_data():
-    s_res = supabase.table("sakanat").select("*").order('name').execute()
-    t_res = supabase.table("students").select("*, sakanat(name)").order('created_at', desc=True).execute()
-    return s_res.data, t_res.data
+    sakanat = supabase.table("sakanat").select("*").order('name').execute()
+    students = supabase.table("students").select("*, sakanat(name)").order('created_at', desc=True).execute()
+    return sakanat.data, students.data
 
 s_list, t_list = load_data()
 s_names = [s['name'] for s in s_list]
 
-# --- 6. القائمة الجانبية ---
+# --- 7. القائمة الجانبية (Sidebar) ---
 with st.sidebar:
     st.title("🏢 سكنات شكّور")
     st.write(f"المطور: **{DEV_NAME}**")
-    st.info(f"الإصدار الحالي: {VERSION}")
+    st.info(f"إصدار النظام: {VERSION}")
     st.markdown("---")
-    search_q = st.text_input("🔍 بحث (اسم، هاتف، ملاحظة):")
+    search_q = st.text_input("🔍 بحث عن طالبة (اسم/هاتف/ملاحظة):")
+    
+    # عرض السجلات للمطور (اللوجز المصلحة)
+    with st.expander("🛠️ سجلات الدخول (Logs)"):
+        dev_key = st.text_input("رمز المطور", type="password")
+        if dev_key == "Sofian2026":
+            try:
+                logs_data = supabase.table("login_logs").select("*").order('login_time', desc=True).limit(5).execute()
+                for log in logs_data.data:
+                    st.caption(f"🕒 {log['login_time'][:16]} | {log['device_info']}")
+            except:
+                st.write("لا يوجد سجلات حالياً.")
+                
+    st.markdown("---")
     if st.button("🚪 تسجيل الخروج"):
         st.session_state["logged_in"] = False
         st.rerun()
 
-# --- 7. الإحصائيات العلوية ---
-st.title("📋 لوحة إدارة السكن")
-c1, c2, c3 = st.columns(3)
-c1.metric("إجمالي الطالبات", len(t_list))
-c2.metric("عدد الشقق", len(s_list))
-c3.metric("حالة النظام", "متصل ✅")
-st.markdown("---")
+# --- 8. الواجهة الرئيسية والعرض ---
+st.title("📋 إدارة بيانات الطالبات")
 
-# التصفية
-s_choice = st.selectbox("📍 تصفية حسب الشقة:", ["الكل"] + s_names)
-filtered = t_list
-if s_choice != "الكل":
-    filtered = [s for s in t_list if s.get('sakanat') and s['sakanat']['name'] == s_choice]
-if search_q:
-    filtered = [s for s in filtered if search_q.lower() in str(s).lower()]
+# تبويبات لتنظيم الشاشة على الموبايل
+tab_list, tab_stats = st.tabs(["👥 قائمة الطالبات", "📊 إحصائيات السكن"])
 
-# --- 8. عرض البطاقات ---
-for student in filtered:
-    sid = str(student['id'])
+with tab_list:
+    # فلترة حسب الشقة
+    s_choice = st.selectbox("📍 تصفية حسب الشقة:", ["الكل"] + s_names)
     
-    # تنسيق رقم الواتساب
-    raw_p = str(student['phone']).replace(' ', '').replace('+', '')
-    wa_phone = "962" + raw_p[1:] if raw_p.startswith('07') else raw_p
+    filtered = t_list
+    if s_choice != "الكل":
+        filtered = [s for s in t_list if s.get('sakanat') and s['sakanat']['name'] == s_choice]
+    if search_q:
+        filtered = [s for s in filtered if search_q.lower() in str(s).lower()]
 
-    with st.container():
+    if not filtered:
+        st.warning("لا توجد بيانات تطابق البحث.")
+    
+    for s in filtered:
+        sid = str(s['id'])
+        
+        # تحضير رابط الواتساب
+        raw_phone = str(s['phone']).replace(' ', '').replace('+', '')
+        wa_link = f"https://wa.me/962{raw_phone[1:]}" if raw_phone.startswith('07') else f"https://wa.me/{raw_phone}"
+
+        # بطاقة الطالبة
         st.markdown(f"""
             <div class="student-card">
-                <h3 style="color: #2E86C1; margin-bottom: 5px;">👤 {student['name']}</h3>
-                <p>🏠 <b>الشقة:</b> {student.get('sakanat', {}).get('name', 'N/A')} | 📞 <b>الهاتف:</b> {student['phone']}</p>
-                <p style="color: #5D6D7E;">📝 <b>ملاحظات:</b> {student['notes'] if student['notes'] else 'لا يوجد ملاحظات'}</p>
+                <h3 style="color: #2E86C1; margin:0;">👤 {s['name']}</h3>
+                <p style="margin:5px 0;">🏠 <b>الشقة:</b> {s.get('sakanat', {}).get('name', 'N/A')} | 📞 <b>الهاتف:</b> {s['phone']}</p>
+                <p style="color: #5D6D7E; font-size:14px;">📝 <b>ملاحظات:</b> {s['notes'] if s['notes'] else 'لا يوجد ملاحظات مسجلة'}</p>
             </div>
         """, unsafe_allow_html=True)
         
-        col_files, col_manage = st.columns([2.5, 1.5])
+        # أزرار الإجراءات
+        col_wa, col_files, col_actions = st.columns([1, 2.5, 1.5])
         
+        with col_wa:
+            st.link_button("💬 WhatsApp", wa_link, use_container_width=True)
+            
         with col_files:
-            f_cols = st.columns(4)
-            # زر واتساب
-            f_cols[0].link_button("💬 WhatsApp", f"https://wa.me/{wa_phone}", use_container_width=True)
-            # الملفات
-            labels = [("الهوية", 'file_id'), ("العقد", 'file_contract'), ("الكمبيالة", 'file_kumbiala')]
-            for i, (lab, col) in enumerate(labels):
-                path = student.get(col)
+            f_cols = st.columns(3)
+            file_labels = [("🪪 الهوية", 'file_id'), ("📜 العقد", 'file_contract'), ("💵 الكمبيالة", 'file_kumbiala')]
+            for i, (label, col_name) in enumerate(file_labels):
+                path = s.get(col_name)
                 if path:
                     url = supabase.storage.from_("student_files").get_public_url(path)
-                    f_cols[i+1].link_button(f"👁️ {lab}", f"{url}?download=", use_container_width=True)
+                    # ميزة ?download= لفتح الملفات بنجاح
+                    f_cols[i].link_button(label, f"{url}?download=", use_container_width=True)
                 else:
-                    f_cols[i+1].button(f"❌ {lab}", key=f"m_{col}_{sid}", disabled=True, use_container_width=True)
+                    f_cols[i].button(f"❌ {label[2:]}", key=f"none_{col_name}_{sid}", disabled=True, use_container_width=True)
 
-        with col_manage:
+        with col_actions:
             m_cols = st.columns(2)
-            # التعديل
-            with m_cols[0].popover("✏️ تعديل البيانات"):
-                new_n = st.text_input("الاسم", value=student['name'], key=f"n_{sid}")
-                new_p = st.text_input("الهاتف", value=student['phone'], key=f"p_{sid}")
-                new_m = st.text_area("الملاحظات", value=student['notes'], key=f"m_{sid}")
-                if st.button("حفظ ✅", key=f"sv_{sid}"):
+            # زر التعديل
+            with m_cols[0].popover("✏️ تعديل"):
+                new_n = st.text_input("الاسم", value=s['name'], key=f"edit_n_{sid}")
+                new_p = st.text_input("الهاتف", value=s['phone'], key=f"edit_p_{sid}")
+                new_m = st.text_area("الملاحظات", value=s['notes'], key=f"edit_m_{sid}")
+                if st.button("حفظ ✅", key=f"save_{sid}"):
                     supabase.table("students").update({"name": new_n, "phone": new_p, "notes": new_m}).eq("id", sid).execute()
-                    st.success("تم التحديث")
+                    st.success("تم التحديث!")
                     st.rerun()
             
-            # الحذف مع التأكيد (طلبك الجديد)
+            # زر الحذف مع التأكيد (طلبك الخاص)
             with m_cols[1].popover("🗑️ حذف"):
-                st.warning("هل أنت متأكد من حذف الطالبة؟")
-                confirm = st.checkbox("نعم، متأكد من الحذف النهائي", key=f"conf_{sid}")
+                st.error("هل أنت متأكد من الحذف؟")
+                confirm = st.checkbox("نعم، احذف الطالبة نهائياً", key=f"confirm_{sid}")
                 if confirm:
-                    if st.button("تأكيد الحذف ❌", key=f"del_{sid}"):
+                    if st.button("حذف الآن ❌", key=f"delete_{sid}"):
                         supabase.table("students").delete().eq("id", sid).execute()
                         st.rerun()
+        st.markdown("<br>", unsafe_allow_html=True)
 
-    st.markdown("<br>", unsafe_allow_html=True)
+with tab_stats:
+    st.subheader("📊 ملخص السكن")
+    st.metric("إجمالي عدد الطالبات", len(t_list))
+    st.metric("عدد الشقق المفعلة", len(s_list))
 
-# --- 9. Footer ---
+# --- 9. تذييل الصفحة (Footer) ---
 st.markdown(f"""
     <div class="dev-footer">
-        نظام إدارة سكنات شكّور - جميع الحقوق محفوظة لعام 2026<br>
+        نظام سكنات شكّور - جميع الحقوق محفوظة لعام 2026<br>
         <b>Designed & Developed by {DEV_NAME} | Version {VERSION}</b>
     </div>
 """, unsafe_allow_html=True)
