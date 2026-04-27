@@ -60,23 +60,28 @@ def log_device():
                 st.session_state["device_logged"] = True
             except: pass
 
-# --- 5. شاشة الدخول ---
+# --- 5. شاشة الدخول (نسخة مصلحة تقنياً) ---
 if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
 
 if not st.session_state["logged_in"]:
     st.markdown("<h2 style='text-align: center;'>🏢 سكنات شكّــــــــور</h2>", unsafe_allow_html=True)
     c1, c2, c3 = st.columns([1,2,1])
-    with col2 := c2:
+    
+    # تم إصلاح السطر هنا (إزالة := واستخدام c2 مباشرة)
+    with c2:
         pwd_in = st.text_input("🔑 كلمة المرور الإدارية", type="password")
-        if st.button("دخول للنظام", use_container_width=True) or (pwd_in == ADMIN_PWD and pwd_in != ""):
+        btn_login = st.button("دخول للنظام", use_container_width=True)
+        
+        # يدعم الدخول بالزر أو بالضغط على Enter
+        if btn_login or (pwd_in == ADMIN_PWD and pwd_in != ""):
             if pwd_in == ADMIN_PWD:
                 st.session_state["logged_in"] = True
                 log_device()
                 st.rerun()
-            elif pwd_in != "": st.error("❌ كلمة المرور خطأ")
+            elif pwd_in != "": 
+                st.error("❌ كلمة المرور خطأ")
     st.stop()
-
 # --- 6. جلب البيانات ---
 @st.cache_data(ttl=2)
 def load_all_data():
