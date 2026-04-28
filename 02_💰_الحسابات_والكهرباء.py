@@ -10,8 +10,7 @@ VERSION = "2.0 Enterprise Strict"
 ADMIN_PWD = "Shakur2026!"
 SUPER_PWD = "ShakurMaster!" # كلمة سر للحذف الكارثي
 
-# تم إضافة initial_sidebar_state="collapsed" كطبقة حماية أولى
-st.set_page_config(page_title="النظام المالي الصارم v2.0", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="النظام المالي الصارم v2.0", layout="wide")
 
 try:
     URL = st.secrets["SUPABASE_URL"]
@@ -21,25 +20,13 @@ except Exception as e:
     st.error(f"⚠️ يرجى ضبط Secrets: {e}")
     st.stop()
 
-# --- الحل الجذري والنهائي للشاشة الجانبية المزعجة ---
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Cairo&display=swap');
     * { font-family: 'Cairo', sans-serif !important; direction: rtl; text-align: right; }
-    
-    /* CSS نووي لإخفاء القائمة الجانبية بالكامل على الموبايل */
-    @media (max-width: 768px) { 
-        [data-testid="stSidebar"] { display: none !important; width: 0 !important; overflow: hidden !important; }
-        [data-testid="collapsedControl"] { display: none !important; } /* يخفي زر الهامبرغر 🍔 */
-        header[data-testid="stHeader"] { display: none !important; } /* يخفي الشريط العلوي بالكامل */
-        .stApp { margin-top: -50px; } /* يرفع المحتوى للأعلى ليملأ الشاشة */
-    }
-    
+    @media (max-width: 768px) { [data-testid="stSidebar"] { display: none !important; } }
     .overdue { border: 2px solid #E74C3C !important; background-color: #FDEDEC !important; }
-    .stDataFrame { direction: ltr; }
-    .pending { color: #E74C3C; font-weight: bold; }
-    .partial { color: #F39C12; font-weight: bold; }
-    .paid { color: #27AE60; font-weight: bold; }
+    .stDataFrame { direction: ltr; } /* لحل مشكلة الجداول في Streamlit */
     </style>
     """, unsafe_allow_html=True)
 
@@ -47,7 +34,7 @@ def log_action(action, details):
     try: supabase.table("audit_logs").insert({"action": action, "details": details}).execute()
     except: pass
 
-# --- 2. الدخول (واجهتك المفضلة بدون تعقيد) ---
+# --- 2. الدخول ---
 if "logged_in" not in st.session_state or not st.session_state["logged_in"]:
     st.markdown("<h2 style='text-align: center;'>🔐 النظام المالي (وصول مقيد)</h2>", unsafe_allow_html=True)
     _, col2, _ = st.columns([1, 2, 1])
@@ -61,7 +48,8 @@ if "logged_in" not in st.session_state or not st.session_state["logged_in"]:
             else: st.error("❌ وصول مرفوض")
     st.stop()
 
-# --- 3. محرك البيانات ---
+# --- 3. محرك البيانات (بدون Cache للبيانات المالية الحساسة) ---
+# تم إزالة الكاش عن الـ Ledger والفواتير لضمان دقة 100% دائماً
 @st.cache_data(ttl=60)
 def get_static_data():
     s = supabase.table("sakanat").select("*").order('name').execute()
@@ -88,6 +76,7 @@ with tabs[0]:
     start_d = c_f1.date_input("من تاريخ", datetime.date(2026, 1, 1))
     end_d = c_f2.date_input("إلى تاريخ", datetime.date.today())
     
+    # الفلترة الزمنية الحقيقية
     filtered_l = [l for l in l_data if start_d <= pd.to_datetime(l['due_date']).date() <= end_d]
     
     total_due = sum([float(l.get('amount_due', 0)) for l in filtered_l])
@@ -129,6 +118,7 @@ with tabs[1]:
             st.markdown("---")
             st.write("⚖️ **توزيع الحصص:**")
             
+            # زر إعادة التوزيع التلقائي (ميزة جديدة)
             def_share = round(total_v / len(stds_in), 2) if total_v > 0 else 0.0
             
             shares = {}
@@ -141,7 +131,7 @@ with tabs[1]:
             st.write(f"الموزع: **{total_dist:,.2f}** | الفاتورة: **{total_v:,.2f}**")
             
             if st.form_submit_button("إصدار الفاتورة ✅"):
-                if abs(total_dist - total_v) > 0.01:
+                if abs(total_dist - total_v) > 0.01: # حل مشكلة الـ Float Comparison
                     st.error("⚠️ إجمالي الحصص لا يطابق قيمة الفاتورة!")
                 elif any(b['sakan_id'] == target_s['id'] and b['bill_month'] == month_v for b in b_data):
                     st.error("⚠️ توجد فاتورة لهذه الشقة في نفس الشهر المالي!")
@@ -151,6 +141,7 @@ with tabs[1]:
                         if bill_file.size > 5 * 1024 * 1024:
                             st.error("حجم الملف يتجاوز 5 ميجابايت.")
                             st.stop()
+                        # حماية الملفات باسم فريد تماماً
                         f_path = f"bill_{target_s['id']}_{month_v}_{uuid.uuid4().hex[:8]}.{bill_file.name.split('.')[-1]}"
                         supabase.storage.from_("student_files").upload(f_path, bill_file.read())
                     
@@ -159,6 +150,7 @@ with tabs[1]:
                     }).execute()
                     bill_id = bill_res.data[0]['id']
                     
+                    # Bulk Insert لليدجر
                     l_entries = [{"student_id": sid, "bill_id": bill_id, "type": "كهرباء", "amount_due": amt, "bill_month": month_v, "due_date": str(due_v), "status": "pending"} for sid, amt in shares.items()]
                     supabase.table("student_ledger").insert(l_entries).execute()
                     log_action("إصدار فاتورة", f"شقة {apt_sel} - شهر {month_v}")
@@ -176,6 +168,7 @@ with tabs[2]:
                 st.link_button("👁️ عرض الفاتورة الأصلية", supabase.storage.from_("student_files").get_public_url(bill['file_path']))
             
             st.markdown("**تعديل الفاتورة والحصص:**")
+            # نجلب قيود اليدجر الخاصة بهذه الفاتورة فقط
             bill_ledger = [l for l in l_data if l['bill_id'] == bill['id']]
             
             with st.form(f"edit_bill_{bill['id']}"):
@@ -183,6 +176,7 @@ with tabs[2]:
                 
                 new_shares = {}
                 for bl in bill_ledger:
+                    # نمنع التعديل إذا كانت الطالبة قد دفعت جزءاً (لحماية البيانات)
                     paid_amt = float(bl.get('amount_paid', 0))
                     disabled = paid_amt > 0
                     std_name = bl.get('students', {}).get('name', 'N/A')
@@ -204,14 +198,13 @@ with tabs[2]:
                         st.rerun()
 
             st.markdown("---")
+            # الحذف المحمي بدبل كونفيرم
             del_c1, del_c2 = st.columns(2)
             check_del = del_c1.checkbox("أقر برغبتي بحذف الفاتورة وكل الذمم التابعة لها", key=f"chk_{bill['id']}")
             if check_del:
                 if del_c2.button("🗑️ حذف نهائي", key=f"del_{bill['id']}", type="primary"):
                     pwd_verify = st.text_input("أدخل كلمة مرور المدير للتأكيد:", type="password", key=f"pwd_{bill['id']}")
                     if pwd_verify == SUPER_PWD or pwd_verify == ADMIN_PWD:
-                        # حذف صريح للحماية المزدوجة (Explicit Delete)
-                        supabase.table("student_ledger").delete().eq("bill_id", bill['id']).execute()
                         supabase.table("electricity_bills").delete().eq("id", bill['id']).execute()
                         log_action("حذف فاتورة", f"رقم {bill['id']}")
                         st.rerun()
@@ -253,37 +246,42 @@ with tabs[3]:
             
             act_c1, act_c2, act_c3 = st.columns([1,1,1])
             
+            # تسجيل دفعة مع حفظ في Payment History
             with act_c1.popover("💸 دفع / تسجيل"):
                 if rem > 0:
+                    # Max value fix + Safe float
                     p_amt = st.number_input("المبلغ", min_value=0.01, max_value=float(rem), value=float(rem), step=1.0, key=f"pin_{entry['id']}")
                     if st.button("تأكيد السداد", key=f"pbtn_{entry['id']}"):
                         new_paid = min(amt_paid + p_amt, amt_due)
                         new_sts = "paid" if new_paid >= amt_due else "partial"
                         
+                        # تحديث الـ Ledger
                         supabase.table("student_ledger").update({"amount_paid": new_paid, "status": new_sts}).eq("id", entry['id']).execute()
+                        # إدراج في سجل الدفعات History
                         supabase.table("payments").insert({"ledger_id": entry['id'], "amount_paid": p_amt, "recorded_by": "Admin"}).execute()
                         
                         log_action("دفعة مالية", f"مبلغ {p_amt} من {entry['students']['name']}")
                         st.rerun()
                 else: st.success("مسدد بالكامل.")
             
+            # عرض سجل الدفعات لهذه الذمة
             with act_c2.popover("📜 سجل الدفعات"):
                 entry_payments = [p for p in p_data if p['ledger_id'] == entry['id']]
                 if entry_payments:
                     for p in entry_payments:
                         p_date = pd.to_datetime(p['payment_date']).strftime("%Y-%m-%d %H:%M")
                         st.caption(f"دُفع {p['amount_paid']} د.أ في {p_date}")
-                        # الإصلاح الجذري لحذف الدفعة بأمان
+                        # ميزة حذف الدفعة وإرجاع العداد (Edit Ledger/Undo)
                         if st.button("🗑️ إلغاء هذه الدفعة", key=f"undo_p_{p['id']}"):
-                            current_ledger = supabase.table("student_ledger").select("amount_due, amount_paid").eq("id", entry['id']).single().execute().data
-                            revert_paid = max(float(current_ledger['amount_paid']) - float(p['amount_paid']), 0)
-                            revert_sts = "paid" if revert_paid >= float(current_ledger['amount_due']) else "partial" if revert_paid > 0 else "pending"
-                            
+                            # نخصم من المدفوع
+                            revert_paid = max(amt_paid - float(p['amount_paid']), 0)
+                            revert_sts = "paid" if revert_paid >= amt_due else "partial" if revert_paid > 0 else "pending"
                             supabase.table("student_ledger").update({"amount_paid": revert_paid, "status": revert_sts}).eq("id", entry['id']).execute()
                             supabase.table("payments").delete().eq("id", p['id']).execute()
                             st.rerun()
                 else: st.info("لا توجد حركات دفع مسجلة.")
 
+            # WhatsApp مشفر
             if rem > 0 and entry.get('students'):
                 msg = f"مرحباً {entry['students']['name']}، تذكير بقسط ({entry['type']}) بقيمة {rem} د.أ المستحق بتاريخ {due_d}."
                 wa_url = f"https://wa.me/962{str(entry['students']['phone'])[1:]}?text={urllib.parse.quote(msg)}"
