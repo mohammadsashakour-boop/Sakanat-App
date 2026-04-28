@@ -26,16 +26,21 @@ st.markdown("""
     @import url('https://fonts.googleapis.com/css2?family=Cairo&display=swap');
     * { font-family: 'Cairo', sans-serif !important; direction: rtl; text-align: right; }
     
-    /* إخفاء كل العناصر المزعجة في الموبايل */
+    /* إبادة الشريط العلوي والقائمة الجانبية في الموبايل بالكامل */
     @media (max-width: 768px) { 
-        [data-testid="stSidebar"] { display: none !important; width: 0 !important; }
-        [data-testid="collapsedControl"] { display: none !important; } /* إخفاء زر الهامبرغر 🍔 */
-        header[data-testid="stHeader"] { display: none !important; } /* إخفاء الشريط العلوي */
-        .stApp { margin-top: -50px; } /* رفع التطبيق للأعلى لملء الشاشة */
+        [data-testid="stSidebar"] { display: none !important; width: 0 !important; overflow: hidden !important; }
+        [data-testid="collapsedControl"] { display: none !important; opacity: 0 !important; pointer-events: none !important; }
+        header[data-testid="stHeader"] { display: none !important; height: 0 !important; }
+        .stApp > header { display: none !important; }
+        #MainMenu { display: none !important; }
+        .stApp { margin-top: -60px !important; } /* رفع المحتوى ليملأ الفراغ */
     }
     
     .overdue { border: 2px solid #E74C3C !important; background-color: #FDEDEC !important; }
-    .stDataFrame { direction: ltr; } /* لحل مشكلة الجداول في Streamlit */
+    .stDataFrame { direction: ltr; }
+    .pending { color: #E74C3C; font-weight: bold; }
+    .partial { color: #F39C12; font-weight: bold; }
+    .paid { color: #27AE60; font-weight: bold; }
     </style>
     """, unsafe_allow_html=True)
 
