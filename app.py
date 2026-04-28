@@ -1,220 +1,197 @@
 import streamlit as st
 from supabase import create_client, Client
 
-# --- 1. هوية التطبيق (الإصدار 0.2 - النسخة النهائية) ---
+# --- 1. الإعدادات والنسخة ---
 VERSION = "0.2"
 DEV_NAME = "Mohammad-Sofian"
 DEV_LOG_PWD = "Soffian3491335"
 
 st.set_page_config(
-    page_title="نظام سكنات شكّور", 
+    page_title="سكنات شكّور v0.2", 
     layout="wide", 
-    initial_sidebar_state="collapsed",
-    page_icon="🏢"
+    initial_sidebar_state="collapsed"
 )
 
-# --- 2. الربط بـ Supabase ---
+# --- 2. الربط بالسيرفر ---
 try:
     URL = st.secrets["SUPABASE_URL"]
     KEY = st.secrets["SUPABASE_KEY"]
     ADMIN_PWD = st.secrets["ADMIN_PASSWORD"]
     supabase: Client = create_client(URL, KEY)
 except:
-    st.error("⚠️ يرجى ضبط Secrets في Streamlit Cloud.")
+    st.error("⚠️ تأكد من إعدادات Secrets في Streamlit Cloud.")
     st.stop()
 
-# --- 3. تصميم الـ UI الفخم (لمسات المهندس محمد) ---
-st.markdown(f"""
+# --- 3. تصميم CSS (ثابت ومريح للعين) ---
+st.markdown("""
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;700&display=swap');
-    
-    * {{ 
-        font-family: 'Cairo', sans-serif !important; 
-        direction: rtl !important; 
-        text-align: right !important; 
-    }}
-    
-    .main {{ background-color: #f4f7f6; }}
-    
-    /* تصميم بطاقة الطالبة */
-    .student-card {{
-        background: white; 
-        padding: 20px; 
-        border-radius: 15px;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.05); 
-        border-right: 10px solid #2E86C1;
-        margin-bottom: 20px;
-    }}
-    
-    /* تنبيه النواقص */
-    .missing-badge {{
-        background-color: #FDEDEC;
-        color: #C0392B;
-        padding: 2px 10px;
-        border-radius: 5px;
-        font-size: 12px;
-        font-weight: bold;
-    }}
-    
-    .footer {{
-        text-align: center; 
-        padding: 30px; 
-        color: #95a5a6; 
-        font-size: 13px;
-        border-top: 1px solid #eee;
-        margin-top: 50px;
-    }}
+    @import url('https://fonts.googleapis.com/css2?family=Cairo&display=swap');
+    * { font-family: 'Cairo', sans-serif !important; direction: rtl; text-align: right; }
+    .st-card {
+        background: white; padding: 20px; border-radius: 12px;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.05); border-right: 8px solid #2E86C1;
+        margin-bottom: 15px;
+    }
+    .status-badge {
+        padding: 2px 8px; border-radius: 5px; font-size: 12px; font-weight: bold;
+    }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 4. نظام الدخول الصامت (بدون ذكر كلمة سجلات) ---
+# --- 4. شاشة الدخول ---
 if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
 
 if not st.session_state["logged_in"]:
-    st.markdown("<h1 style='text-align: center; color: #2E86C1; margin-top: 60px;'>🏢 نظام إدارة السكن</h1>", unsafe_allow_html=True)
-    _, col2, _ = st.columns([1, 1.8, 1])
+    st.markdown("<h2 style='text-align: center;'>🏢 نظام إدارة السكن</h2>", unsafe_allow_html=True)
+    _, col2, _ = st.columns([1, 2, 1])
     with col2:
-        pwd = st.text_input("🔑 كلمة المرور", type="password")
-        if st.button("دخول للنظام", use_container_width=True) or (pwd == ADMIN_PWD and pwd != ""):
+        pwd = st.text_input("🔑 كلمة المرور الإدارية", type="password")
+        if st.button("دخول", use_container_width=True) or (pwd == ADMIN_PWD and pwd != ""):
             if pwd == ADMIN_PWD:
                 st.session_state["logged_in"] = True
                 try:
-                    # تسجيل بصمة الجهاز بصمت
+                    # تسجيل صامت للجهاز في ركن المطور
                     ua = st.context.headers.get("User-Agent", "")
-                    device = "iPhone" if "iPhone" in ua else "Android" if "Android" in ua else "PC"
-                    supabase.table("login_logs").insert({"device_info": device}).execute()
+                    dev = "iPhone" if "iPhone" in ua else "Android" if "Android" in ua else "PC"
+                    supabase.table("login_logs").insert({"device_info": dev}).execute()
                 except: pass
                 st.rerun()
-            elif pwd != "": st.error("❌ كلمة المرور غير صحيحة")
+            elif pwd != "": st.error("❌ كلمة المرور خطأ")
     st.stop()
 
 # --- 5. جلب البيانات ---
 @st.cache_data(ttl=2)
-def fetch_data():
-    s_res = supabase.table("sakanat").select("*").order('name').execute()
-    t_res = supabase.table("students").select("*, sakanat(name)").order('created_at', desc=True).execute()
-    return s_res.data, t_res.data
+def load_full_data():
+    s = supabase.table("sakanat").select("*").order('name').execute()
+    # نجلب جميع الطلاب (المحذوفين وغير المحذوفين)
+    t = supabase.table("students").select("*, sakanat(name)").order('created_at', desc=True).execute()
+    return s.data, t.data
 
-sakanat_list, student_list = fetch_data()
+s_list, all_students = load_full_data()
 
-# --- 6. الواجهة الرئيسية ---
-st.title("📋 لوحة التحكم")
+# --- 6. الواجهة الرئيسية (التبويبات) ---
+st.title("🏢 لوحة تحكم سكنات شكّور")
 
-# التبويبات الثلاثة
-tab_main, tab_analytics, tab_dev = st.tabs(["👥 إدارة الطالبات", "📊 نظرة عامة", "🛠️ ركن المطور"])
+tab1, tab2, tab3, tab4 = st.tabs(["👥 إدارة الطالبات", "🗑️ سلة المحذوفات", "📊 الإحصائيات", "🛠️ ركن المطور"])
 
-with tab_main:
-    # --- الميزة الـ Critical: رادار النواقص والبحث ---
-    col_a, col_b, col_c = st.columns([2, 1, 1])
-    with col_a:
-        search_q = st.text_input("🔍 بحث بالاسم:")
-    with col_b:
-        apt_filter = st.selectbox("🏠 الشقة:", ["الكل"] + [s['name'] for s in sakanat_list])
-    with col_c:
-        # ميزة الفلترة حسب النواقص
-        filter_missing = st.toggle("⚠️ عرض النواقص فقط")
+# --- التبويب الأول: الإدارة والنقل ---
+with tab1:
+    c1, c2 = st.columns([2, 1])
+    search_q = c1.text_input("🔍 بحث بالاسم:")
+    choice = c2.selectbox("📍 تصفية حسب الشقة:", ["الكل"] + [s['name'] for s in s_list])
 
-    # تطبيق الفلترة
-    data = student_list
-    if apt_filter != "الكل":
-        data = [s for s in data if s.get('sakanat') and s['sakanat']['name'] == apt_filter]
-    if search_q:
-        data = [s for s in data if search_q.lower() in s['name'].lower()]
+    # تصفية الطالبات النشطات فقط (is_deleted == False)
+    active_students = [s for s in all_students if not s.get('is_deleted', False)]
     
-    # منطق رادار النواقص
-    if filter_missing:
-        data = [s for s in data if not (s.get('file_id') and s.get('file_contract') and s.get('file_kumbiala'))]
+    filtered = active_students
+    if choice != "الكل":
+        filtered = [s for s in active_students if s.get('sakanat') and s['sakanat']['name'] == choice]
+    if search_q:
+        filtered = [s for s in filtered if search_q.lower() in s['name'].lower()]
 
-    if not data:
-        st.info("لا توجد بيانات مطابقة لهذه المعايير.")
-
-    for student in data:
-        sid = str(student['id'])
+    for s in filtered:
+        sid = str(s['id'])
+        wa = f"https://wa.me/962{str(s['phone'])[1:]}" if str(s['phone']).startswith('07') else "#"
         
-        # فحص اكتمال الأوراق
-        missing = []
-        if not student.get('file_id'): missing.append("هوية")
-        if not student.get('file_contract'): missing.append("عقد")
-        if not student.get('file_kumbiala'): missing.append("كمبيالة")
-        
-        missing_text = f"<span class='missing-badge'>⚠️ نقص: {', '.join(missing)}</span>" if missing else "✅ مكتمل"
+        # تحسين (1): مؤشر اكتمال الملفات (الميزة التحسينية)
+        files_ok = all([s.get('file_id'), s.get('file_contract'), s.get('file_kumbiala')])
+        status_html = "<span class='status-badge' style='background:#D4EFDF; color:#1D8348;'>✅ مكتمل</span>" if files_ok else "<span class='status-badge' style='background:#FADBD8; color:#943126;'>⚠️ نقص ملفات</span>"
 
         st.markdown(f"""
-            <div class="student-card">
-                <div style="display: flex; justify-content: space-between;">
-                    <h3 style="color:#2E86C1; margin:0;">👤 {student['name']}</h3>
-                    <div>{missing_text}</div>
+            <div class="st-card">
+                <div style="display:flex; justify-content:space-between;">
+                    <h3 style="color:#2E86C1; margin:0;">👤 {s['name']}</h3>
+                    {status_html}
                 </div>
-                <p style="margin:8px 0; font-size:15px;">🏠 {student.get('sakanat', {}).get('name', 'N/A')} | 📞 {student['phone']}</p>
-                <p style="color:#7f8c8d; font-size:14px;">📝 {student['notes'] if student['notes'] else 'لا ملاحظات'}</p>
+                <p>🏠 {s.get('sakanat', {}).get('name', 'N/A')} | 📞 {s['phone']}</p>
+                <p style="color:gray; font-size:14px;">📝 {s['notes'] if s['notes'] else 'لا ملاحظات'}</p>
             </div>
         """, unsafe_allow_html=True)
         
-        c_wa, c_files, c_tools = st.columns([1, 2.5, 1])
-        with c_wa:
-            raw_p = str(student['phone']).replace(' ', '').replace('+', '')
-            st.link_button("💬 WhatsApp", f"https://wa.me/962{raw_p[1:]}" if raw_p.startswith('07') else "#", use_container_width=True)
-        
-        with c_files:
+        col_wa, col_files, col_opts = st.columns([1, 2.5, 1])
+        with col_wa: st.link_button("💬 WhatsApp", wa, use_container_width=True)
+        with col_files:
             f_cols = st.columns(3)
-            files_map = [("الهوية", "file_id"), ("العقد", "file_contract"), ("الكمبيالة", "file_kumbiala")]
-            for i, (label, col_name) in enumerate(files_map):
-                if student.get(col_name):
-                    url = supabase.storage.from_("student_files").get_public_url(student[col_name])
-                    f_cols[i].link_button(label, f"{url}?download=", key=f"f_{col_name}_{sid}", use_container_width=True)
-                else:
-                    f_cols[i].button(f"❌ {label}", disabled=True, key=f"n_{col_name}_{sid}", use_container_width=True)
+            for i, (lab, col_n) in enumerate([("هوية", "file_id"), ("عقد", "file_contract"), ("كمبيالة", "file_kumbiala")]):
+                if s.get(col_n):
+                    u = supabase.storage.from_("student_files").get_public_url(s[col_n])
+                    f_cols[i].link_button(lab, f"{u}?download=", key=f"f_{col_n}_{sid}")
+                else: f_cols[i].button(f"❌ {lab}", disabled=True, key=f"n_{col_n}_{sid}")
 
-        with c_tools:
-            if st.button("⚙️ خيارات", key=f"btn_{sid}", use_container_width=True):
-                st.session_state[f"show_{sid}"] = not st.session_state.get(f"show_{sid}", False)
-            
-            if st.session_state.get(f"show_{sid}", False):
-                st.markdown("---")
-                e_name = st.text_input("الاسم", student['name'], key=f"name_{sid}")
-                e_phone = st.text_input("الهاتف", student['phone'], key=f"phone_{sid}")
-                e_notes = st.text_area("الملاحظات", student['notes'], key=f"note_{sid}")
-                
-                c_sv, c_dl = st.columns(2)
-                if c_sv.button("حفظ", key=f"sv_{sid}", use_container_width=True):
-                    supabase.table("students").update({"name": e_name, "phone": e_phone, "notes": e_notes}).eq("id", sid).execute()
+        with col_opts:
+            if st.button("⚙️ خيارات", key=f"opt_{sid}", use_container_width=True):
+                st.session_state[f"edit_{sid}"] = not st.session_state.get(f"edit_{sid}", False)
+
+        if st.session_state.get(f"edit_{sid}", False):
+            with st.container():
+                st.info("إجراءات سريعة:")
+                # ميزة نقل طالب إلى سكن آخر
+                new_apt = st.selectbox("🚚 نقل إلى سكن جديد:", [s['name'] for s in s_list if s['name'] != s.get('sakanat', {}).get('name')], key=f"move_{sid}")
+                if st.button("تأكيد النقل", key=f"btn_move_{sid}"):
+                    target_apt = next(item for item in s_list if item["name"] == new_apt)
+                    supabase.table("students").update({"sakan_id": target_apt['id']}).eq("id", sid).execute()
+                    st.success(f"تم نقل الطالبة إلى {new_apt}")
                     st.rerun()
-                if c_dl.button("حذف", key=f"dl_{sid}", type="primary", use_container_width=True):
-                    if st.checkbox("تأكيد الحذف؟", key=f"conf_{sid}"):
-                        supabase.table("students").delete().eq("id", sid).execute()
-                        st.rerun()
+                
+                st.markdown("---")
+                # تعديل البيانات
+                en = st.text_input("تعديل الاسم", s['name'], key=f"en_{sid}")
+                em = st.text_area("تعديل الملاحظات", s['notes'], key=f"em_{sid}")
+                if st.button("حفظ التعديلات ✅", key=f"sv_{sid}"):
+                    supabase.table("students").update({"name": en, "notes": em}).eq("id", sid).execute()
+                    st.rerun()
+                
+                # ميزة الحذف الناعم (النقل للسلة)
+                if st.button("🗑️ نقل إلى سلة المحذوفات", key=f"soft_del_{sid}", type="primary"):
+                    supabase.table("students").update({"is_deleted": True}).eq("id", sid).execute()
+                    st.rerun()
 
-with tab_analytics:
-    st.subheader("📊 ملخص السكن")
-    s1, s2 = st.columns(2)
-    s1.metric("إجمالي الطالبات", len(student_list))
-    s2.metric("عدد الشقق", len(sakanat_list))
+# --- التبويب الثاني: سلة المحذوفات ---
+with tab2:
+    st.subheader("🗑️ سلة المحذوفات")
+    deleted_ones = [s for s in all_students if s.get('is_deleted', False)]
     
-    # إحصائية الملفات الناقصة
-    missing_any = [s for s in student_list if not (s.get('file_id') and s.get('file_contract') and s.get('file_kumbiala'))]
-    st.error(f"⚠️ يوجد {len(missing_any)} طالبة لديهن نواقص في الأوراق الرسمية.")
+    if not deleted_ones:
+        st.info("السلة فارغة حالياً.")
+    
+    for ds in deleted_ones:
+        dsid = str(ds['id'])
+        st.markdown(f"""
+            <div style="background:#F9EBEA; padding:15px; border-radius:10px; border-right:5px solid #C0392B; margin-bottom:10px;">
+                <h4 style="margin:0;">👤 {ds['name']}</h4>
+                <p style="font-size:13px; color:gray;">سكن سابق: {ds.get('sakanat', {}).get('name', 'N/A')}</p>
+            </div>
+        """, unsafe_allow_html=True)
+        
+        c_res, c_perm = st.columns(2)
+        if c_res.button("🔄 استرجاع الطالبة", key=f"res_{dsid}", use_container_width=True):
+            supabase.table("students").update({"is_deleted": False}).eq("id", dsid).execute()
+            st.rerun()
+        
+        if c_perm.button("❌ حذف نهائي (للأبد)", key=f"perm_{dsid}", use_container_width=True):
+            if st.checkbox("أنا متأكد، احذف البيانات نهائياً", key=f"chk_{dsid}"):
+                supabase.table("students").delete().eq("id", dsid).execute()
+                st.rerun()
 
-with tab_dev:
-    st.subheader("🛠️ ركن المطور")
-    dev_key = st.text_input("أدخل رمز المطور للمتابعة:", type="password")
-    if dev_key == DEV_LOG_PWD:
-        st.success(f"مرحباً بك يا مهندس {DEV_NAME.split('-')[0]}.")
+# --- التبويب الثالث: الإحصائيات ---
+with tab3:
+    st.metric("إجمالي الطالبات النشطات", len(active_students))
+    st.metric("عدد الشقق", len(s_list))
+
+# --- التبويب الرابع: ركن المطور ---
+with tab4:
+    dev_code = st.text_input("أدخل رمز الوصول:", type="password")
+    if dev_code == DEV_LOG_PWD:
         try:
             logs = supabase.table("login_logs").select("*").order('login_time', desc=True).limit(10).execute()
-            if logs.data:
-                for l in logs.data:
-                    st.write(f"🕒 `{l['login_time'][11:16]}` | الجهاز: **{l['device_info']}**")
-        except: st.write("لا يوجد بيانات لعرضها.")
+            for l in logs.data:
+                st.write(f"🕒 {l['login_time'][11:16]} | الجهاز: **{l['device_info']}**")
+        except: st.error("تأكد من وجود جدول login_logs")
 
-# --- 7. التذييل (Footer) ---
-st.markdown(f"""
-    <div class="footer">
-        تم التطوير بواسطة <b>{DEV_NAME}</b> | © 2026<br>
-        الإصدار المعتمد {VERSION}
-    </div>
-""", unsafe_allow_html=True)
-
-if st.button("🚪 تسجيل الخروج", use_container_width=True):
+# تسجيل الخروج
+if st.button("🚪 تسجيل الخروج"):
     st.session_state["logged_in"] = False
     st.rerun()
+
+st.caption(f"v{VERSION} | {DEV_NAME}")
