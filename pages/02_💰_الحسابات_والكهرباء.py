@@ -43,7 +43,7 @@ if "logged_in" not in st.session_state or not st.session_state["logged_in"]:
         if st.button("دخول", use_container_width=True) or (pwd_in == ADMIN_PWD and pwd_in != ""):
             if pwd_in == ADMIN_PWD:
                 st.session_state["logged_in"] = True
-                log_action("دخول", "تسجيل دخول للنظام المالي")
+                log_action("دخول", "تسجيل دخول لنظام الحسابات")
                 st.rerun()
             else: st.error("❌ وصول مرفوض")
     st.stop()
