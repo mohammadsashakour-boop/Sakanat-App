@@ -5,7 +5,7 @@ import pandas as pd
 
 # --- 1. إعدادات الهوية والأمان الموحدة ---
 VERSION = "0.2.2"
-ADMIN_PWD = "Shakur2026!"  # كلمة السر الموحدة كما طلبت
+ADMIN_PWD = "Shakur2026!"
 DEV_NAME = "Mohammad-Sofian"
 
 st.set_page_config(page_title="الحسابات | سكنات شكّور", layout="wide")
@@ -20,13 +20,12 @@ except:
     st.stop()
 
 # --- 3. حل مشكلة الجوال + تصميم RTL ---
-# هذا الكود يقوم بتصغير القائمة الجانبية وإخفائها برمجياً في الموبايل لعدم الإزعاج
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Cairo&display=swap');
     * { font-family: 'Cairo', sans-serif !important; direction: rtl; text-align: right; }
     
-    /* حل مشكلة Sidebar في الموبايل */
+    /* حل مشكلة القائمة الجانبية المزعجة في الموبايل */
     @media (max-width: 768px) {
         [data-testid="stSidebar"] {
             display: none !important;
@@ -54,7 +53,6 @@ if not st.session_state["logged_in"]:
             if pwd_in == ADMIN_PWD:
                 st.session_state["logged_in"] = True
                 try:
-                    # تسجيل صامت لدخول الجهاز
                     ua = st.context.headers.get("User-Agent", "Unknown")
                     supabase.table("login_logs").insert({"device_info": f"Finance Login: {ua}"}).execute()
                 except: pass
@@ -76,7 +74,7 @@ except Exception as e:
     st.error(f"خطأ في الاتصال: {e}")
     st.stop()
 
-# --- 6. الواجهة الرئيسية (التصميم الشجري المطور) ---
+# --- 6. الواجهة الرئيسية ---
 st.title("💰 الإدارة المالية والكهرباء")
 
 tabs = st.tabs(["⚡ فواتير الكهرباء", "🏠 سجل الحسابات الموزع", "📊 الملخص العام"])
@@ -85,11 +83,9 @@ tabs = st.tabs(["⚡ فواتير الكهرباء", "🏠 سجل الحسابا
 with tabs[0]:
     st.subheader("⚡ إصدار وتوزيع فاتورة الكهرباء")
     
-    # الشجرة: اختيار الشقة أولاً
     apt_sel = st.selectbox("🏘️ الخطوة 1: اختر الشقة المستهدفة:", [s['name'] for s in s_list])
     target_sakan = next(item for item in s_list if item["name"] == apt_sel)
     
-    # جلب الطالبات في هذه الشقة حصراً
     stds_in_apt = [s for s in t_list if s.get('sakan_id') == target_sakan['id']]
     
     if not stds_in_apt:
@@ -103,7 +99,6 @@ with tabs[0]:
             bill_month = col_b2.selectbox("عن شهر مالي:", [f"2026-{m:02d}" for m in range(1, 13)], index=datetime.date.today().month-1)
             
             st.markdown("---")
-            # الحساب التلقائي (القسمة العادلة)
             per_std = round(bill_val / len(stds_in_apt), 2) if bill_val > 0 else 0.0
             st.info(f"نصيب كل طالبة في هذا الشهر: **{per_std} د.أ**")
             
@@ -127,7 +122,6 @@ with tabs[1]:
     search_std = f_c1.selectbox("بحث عن سجل طالبة محددة:", ["عرض الكل"] + [s['name'] for s in t_list])
     search_mon = f_c2.selectbox("تصفية حسب الشهر:", ["عرض الكل"] + sorted(list(set([l['bill_month'] for l in ledger])) if ledger else []))
     
-    # منطق التصفية المطور
     view_data = ledger
     if search_std != "عرض الكل":
         target_sid = next(s['id'] for s in t_list if s['name'] == search_std)
@@ -137,13 +131,11 @@ with tabs[1]:
 
     if view_data:
         df = pd.DataFrame(view_data)
-        # تنسيق الأسماء للأخ
         df['اسم الطالبة'] = df['students'].apply(lambda x: x['name'] if x else "N/A")
         df_display = df[['bill_month', 'اسم الطالبة', 'type', 'amount_due', 'status']]
         df_display.columns = ['الشهر', 'الطالبة', 'النوع', 'المطلوب', 'الحالة']
         st.table(df_display)
         
-        # ميزة التعديل: سداد مبلغ
         with st.popover("⚙️ إجراء دفع مالي"):
             sel_item = st.selectbox("اختر البند المسدد:", [f"{l['bill_month']} - {l['students']['name']} ({l['type']})" for l in view_data])
             if st.button("تغيير الحالة إلى 'مدفوع'"):
@@ -163,5 +155,3 @@ if st.button("🚪 خروج"):
     st.rerun()
 
 st.caption(f"نظام سكنات شكّور | v{VERSION} | المطور: {DEV_NAME}")
-
-تم إنهاء نظام "الكهرباء والمالية" المطور v0.2.2! هذا الكود يضمن لك أقصى درجات الدقة والاحترافية. لا تتردد في طلب أي تعديل إضافي.
