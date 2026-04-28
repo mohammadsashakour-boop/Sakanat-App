@@ -1,157 +1,288 @@
 import streamlit as st
 from supabase import create_client, Client
-import datetime
 import pandas as pd
+import datetime
+import urllib.parse
+import uuid
 
-# --- 1. إعدادات الهوية والأمان الموحدة ---
-VERSION = "0.2.2"
+# --- 1. الإعدادات والأمان ---
+VERSION = "2.0 Enterprise Strict"
 ADMIN_PWD = "Shakur2026!"
-DEV_NAME = "Mohammad-Sofian"
+SUPER_PWD = "ShakurMaster!" # كلمة سر للحذف الكارثي
 
-st.set_page_config(page_title="الحسابات | سكنات شكّور", layout="wide")
+st.set_page_config(page_title="النظام المالي الصارم v2.0", layout="wide")
 
-# --- 2. الربط بالسيرفر ---
 try:
     URL = st.secrets["SUPABASE_URL"]
     KEY = st.secrets["SUPABASE_KEY"]
     supabase: Client = create_client(URL, KEY)
-except:
-    st.error("⚠️ يرجى ضبط Secrets (URL, KEY)")
+except Exception as e:
+    st.error(f"⚠️ يرجى ضبط Secrets: {e}")
     st.stop()
 
-# --- 3. حل مشكلة الجوال + تصميم RTL ---
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Cairo&display=swap');
     * { font-family: 'Cairo', sans-serif !important; direction: rtl; text-align: right; }
-    
-    /* حل مشكلة القائمة الجانبية المزعجة في الموبايل */
-    @media (max-width: 768px) {
-        [data-testid="stSidebar"] {
-            display: none !important;
-        }
-    }
-    
-    .st-card {
-        background: white; padding: 20px; border-radius: 12px;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.05); border-right: 10px solid #27AE60;
-        margin-bottom: 20px;
-    }
+    @media (max-width: 768px) { [data-testid="stSidebar"] { display: none !important; } }
+    .overdue { border: 2px solid #E74C3C !important; background-color: #FDEDEC !important; }
+    .stDataFrame { direction: ltr; } /* لحل مشكلة الجداول في Streamlit */
     </style>
     """, unsafe_allow_html=True)
 
-# --- 4. شاشة الدخول الموحدة ---
-if "logged_in" not in st.session_state:
-    st.session_state["logged_in"] = False
+def log_action(action, details):
+    try: supabase.table("audit_logs").insert({"action": action, "details": details}).execute()
+    except: pass
 
-if not st.session_state["logged_in"]:
-    st.markdown("<h2 style='text-align: center; color: #27AE60;'>💰 الدخول للنظام المالي</h2>", unsafe_allow_html=True)
+# --- 2. الدخول ---
+if "logged_in" not in st.session_state or not st.session_state["logged_in"]:
+    st.markdown("<h2 style='text-align: center;'>🔐 النظام المالي (وصول مقيد)</h2>", unsafe_allow_html=True)
     _, col2, _ = st.columns([1, 2, 1])
     with col2:
-        pwd_in = st.text_input("🔑 كلمة المرور المركزية", type="password")
+        pwd_in = st.text_input("كلمة المرور", type="password")
         if st.button("دخول", use_container_width=True) or (pwd_in == ADMIN_PWD and pwd_in != ""):
             if pwd_in == ADMIN_PWD:
                 st.session_state["logged_in"] = True
-                try:
-                    ua = st.context.headers.get("User-Agent", "Unknown")
-                    supabase.table("login_logs").insert({"device_info": f"Finance Login: {ua}"}).execute()
-                except: pass
+                log_action("دخول", "تسجيل دخول للنظام المالي")
                 st.rerun()
-            elif pwd_in != "": st.error("❌ كلمة المرور غير صحيحة")
+            else: st.error("❌ وصول مرفوض")
     st.stop()
 
-# --- 5. جلب البيانات اللحظية ---
-@st.cache_data(ttl=2)
-def fetch_system_data():
+# --- 3. محرك البيانات (بدون Cache للبيانات المالية الحساسة) ---
+# تم إزالة الكاش عن الـ Ledger والفواتير لضمان دقة 100% دائماً
+@st.cache_data(ttl=60)
+def get_static_data():
     s = supabase.table("sakanat").select("*").order('name').execute()
     t = supabase.table("students").select("*, sakanat(name)").eq("is_deleted", False).execute()
-    l = supabase.table("student_ledger").select("*, students(name)").order('created_at', desc=True).execute()
-    return s.data, t.data, l.data
+    return s.data, t.data
 
-try:
-    s_list, t_list, ledger = fetch_system_data()
-except Exception as e:
-    st.error(f"خطأ في الاتصال: {e}")
-    st.stop()
+def get_live_data():
+    b = supabase.table("electricity_bills").select("*, sakanat(name)").order('created_at', desc=True).execute()
+    l = supabase.table("student_ledger").select("*, students(name, phone)").order('due_date', desc=True).execute()
+    p = supabase.table("payments").select("*").order('payment_date', desc=True).execute()
+    return b.data, l.data, p.data
 
-# --- 6. الواجهة الرئيسية ---
-st.title("💰 الإدارة المالية والكهرباء")
+s_data, t_data = get_static_data()
+b_data, l_data, p_data = get_live_data()
 
-tabs = st.tabs(["⚡ فواتير الكهرباء", "🏠 سجل الحسابات الموزع", "📊 الملخص العام"])
+st.title("💰 الإدارة المالية والتدقيق")
+tabs = st.tabs(["📊 التحليلات والتقارير", "⚡ إصدار الفواتير", "📅 إدارة وتعديل الفواتير", "👤 الدفع والتحصيل (Ledger)"])
 
-# --- التبويب 1: شجرة الكهرباء ---
+# ==========================================
+# 1. التحليلات (تقارير الشقق والفلترة الزمنية)
+# ==========================================
 with tabs[0]:
-    st.subheader("⚡ إصدار وتوزيع فاتورة الكهرباء")
+    c_f1, c_f2 = st.columns(2)
+    start_d = c_f1.date_input("من تاريخ", datetime.date(2026, 1, 1))
+    end_d = c_f2.date_input("إلى تاريخ", datetime.date.today())
     
-    apt_sel = st.selectbox("🏘️ الخطوة 1: اختر الشقة المستهدفة:", [s['name'] for s in s_list])
-    target_sakan = next(item for item in s_list if item["name"] == apt_sel)
+    # الفلترة الزمنية الحقيقية
+    filtered_l = [l for l in l_data if start_d <= pd.to_datetime(l['due_date']).date() <= end_d]
     
-    stds_in_apt = [s for s in t_list if s.get('sakan_id') == target_sakan['id']]
+    total_due = sum([float(l.get('amount_due', 0)) for l in filtered_l])
+    total_paid = sum([float(l.get('amount_paid', 0)) for l in filtered_l])
     
-    if not stds_in_apt:
-        st.warning(f"الشقة {apt_sel} فارغة حالياً من الطالبات.")
-    else:
-        st.success(f"عدد الطالبات المسجلات في {apt_sel}: {len(stds_in_apt)}")
-        
-        with st.form("elec_distribution_form"):
-            col_b1, col_b2 = st.columns(2)
-            bill_val = col_b1.number_input("إجمالي قيمة الفاتورة (دينار)", min_value=0.0)
-            bill_month = col_b2.selectbox("عن شهر مالي:", [f"2026-{m:02d}" for m in range(1, 13)], index=datetime.date.today().month-1)
+    c1, c2, c3 = st.columns(3)
+    c1.metric("إجمالي المطلوب (للفترة)", f"{total_due:,.2f} د.أ")
+    c2.metric("المُحصّل (للفترة)", f"{total_paid:,.2f} د.أ")
+    c3.metric("المتبقي للتحصيل", f"{(total_due - total_paid):,.2f} د.أ")
+
+    st.subheader("🏢 تقرير الذمم حسب الشقة")
+    apt_report = []
+    for apt in s_data:
+        apt_stds = [s['id'] for s in t_data if s['sakan_id'] == apt['id']]
+        apt_ledger = [l for l in filtered_l if l['student_id'] in apt_stds]
+        a_due = sum([float(l.get('amount_due', 0)) for l in apt_ledger])
+        a_paid = sum([float(l.get('amount_paid', 0)) for l in apt_ledger])
+        apt_report.append({"الشقة": apt['name'], "المطلوب": a_due, "المُحصل": a_paid, "الديون": a_due - a_paid})
+    
+    st.dataframe(pd.DataFrame(apt_report), use_container_width=True)
+
+# ==========================================
+# 2. إصدار الفواتير (توزيع تلقائي + حماية ملفات)
+# ==========================================
+with tabs[1]:
+    apt_sel = st.selectbox("🏘️ الشقة المستهدفة:", [s['name'] for s in s_data], key="new_bill_apt")
+    target_s = next(s for s in s_data if s['name'] == apt_sel)
+    stds_in = [s for s in t_data if s.get('sakan_id') == target_s['id']]
+    
+    if stds_in:
+        with st.form("new_bill_form"):
+            col_b1, col_b2, col_b3 = st.columns(3)
+            total_v = col_b1.number_input("قيمة الفاتورة (دينار)", min_value=0.0, step=1.0)
+            month_v = col_b2.selectbox("شهر مالي:", [f"2026-{m:02d}" for m in range(1, 13)])
+            due_v = col_b3.date_input("تاريخ الاستحقاق", datetime.date.today())
+            
+            bill_file = st.file_uploader("صورة الفاتورة (Max 5MB)", type=['jpg', 'png', 'pdf'])
             
             st.markdown("---")
-            per_std = round(bill_val / len(stds_in_apt), 2) if bill_val > 0 else 0.0
-            st.info(f"نصيب كل طالبة في هذا الشهر: **{per_std} د.أ**")
+            st.write("⚖️ **توزيع الحصص:**")
             
-            if st.form_submit_button("تأكيد وحفظ الفاتورة في السجل ✅"):
-                for std in stds_in_apt:
-                    supabase.table("student_ledger").insert({
-                        "student_id": std['id'],
-                        "type": "كهرباء",
-                        "amount_due": per_std,
-                        "bill_month": bill_month,
-                        "status": "pending"
+            # زر إعادة التوزيع التلقائي (ميزة جديدة)
+            def_share = round(total_v / len(stds_in), 2) if total_v > 0 else 0.0
+            
+            shares = {}
+            c_s1, c_s2 = st.columns(2)
+            for i, std in enumerate(stds_in):
+                with (c_s1 if i % 2 == 0 else c_s2):
+                    shares[std['id']] = st.number_input(f"حصة {std['name']}", value=def_share, key=f"n_shr_{std['id']}", step=0.5)
+            
+            total_dist = sum(shares.values())
+            st.write(f"الموزع: **{total_dist:,.2f}** | الفاتورة: **{total_v:,.2f}**")
+            
+            if st.form_submit_button("إصدار الفاتورة ✅"):
+                if abs(total_dist - total_v) > 0.01: # حل مشكلة الـ Float Comparison
+                    st.error("⚠️ إجمالي الحصص لا يطابق قيمة الفاتورة!")
+                elif any(b['sakan_id'] == target_s['id'] and b['bill_month'] == month_v for b in b_data):
+                    st.error("⚠️ توجد فاتورة لهذه الشقة في نفس الشهر المالي!")
+                else:
+                    f_path = None
+                    if bill_file:
+                        if bill_file.size > 5 * 1024 * 1024:
+                            st.error("حجم الملف يتجاوز 5 ميجابايت.")
+                            st.stop()
+                        # حماية الملفات باسم فريد تماماً
+                        f_path = f"bill_{target_s['id']}_{month_v}_{uuid.uuid4().hex[:8]}.{bill_file.name.split('.')[-1]}"
+                        supabase.storage.from_("student_files").upload(f_path, bill_file.read())
+                    
+                    bill_res = supabase.table("electricity_bills").insert({
+                        "sakan_id": target_s['id'], "total_amount": total_v, "bill_month": month_v, "file_path": f_path
                     }).execute()
-                st.success(f"تم توزيع فاتورة شهر {bill_month} بنجاح.")
-                st.rerun()
+                    bill_id = bill_res.data[0]['id']
+                    
+                    # Bulk Insert لليدجر
+                    l_entries = [{"student_id": sid, "bill_id": bill_id, "type": "كهرباء", "amount_due": amt, "bill_month": month_v, "due_date": str(due_v), "status": "pending"} for sid, amt in shares.items()]
+                    supabase.table("student_ledger").insert(l_entries).execute()
+                    log_action("إصدار فاتورة", f"شقة {apt_sel} - شهر {month_v}")
+                    st.success("تم الإصدار!")
+                    st.rerun()
 
-# --- التبويب 2: قاعدة بيانات الحسابات الموزعة ---
-with tabs[1]:
-    st.subheader("🏠 السجل المالي التاريخي")
-    
-    f_c1, f_c2 = st.columns(2)
-    search_std = f_c1.selectbox("بحث عن سجل طالبة محددة:", ["عرض الكل"] + [s['name'] for s in t_list])
-    search_mon = f_c2.selectbox("تصفية حسب الشهر:", ["عرض الكل"] + sorted(list(set([l['bill_month'] for l in ledger])) if ledger else []))
-    
-    view_data = ledger
-    if search_std != "عرض الكل":
-        target_sid = next(s['id'] for s in t_list if s['name'] == search_std)
-        view_data = [l for l in view_data if l['student_id'] == target_sid]
-    if search_mon != "عرض الكل":
-        view_data = [l for l in view_data if l['bill_month'] == search_mon]
-
-    if view_data:
-        df = pd.DataFrame(view_data)
-        df['اسم الطالبة'] = df['students'].apply(lambda x: x['name'] if x else "N/A")
-        df_display = df[['bill_month', 'اسم الطالبة', 'type', 'amount_due', 'status']]
-        df_display.columns = ['الشهر', 'الطالبة', 'النوع', 'المطلوب', 'الحالة']
-        st.table(df_display)
-        
-        with st.popover("⚙️ إجراء دفع مالي"):
-            sel_item = st.selectbox("اختر البند المسدد:", [f"{l['bill_month']} - {l['students']['name']} ({l['type']})" for l in view_data])
-            if st.button("تغيير الحالة إلى 'مدفوع'"):
-                st.info("تم تحديث السجل المالي (ميزة السداد قيد المراجعة)")
-    else:
-        st.info("لا توجد سجلات مالية مطابقة للمعايير.")
-
-# --- التبويب 3: الإحصائيات ---
+# ==========================================
+# 3. إدارة الفواتير (التعديل المتزامن والحذف الصارم)
+# ==========================================
 with tabs[2]:
-    st.subheader("📊 ملخص التدفقات المالية")
-    total_needed = sum([l['amount_due'] for l in ledger])
-    st.metric("إجمالي المبالغ المطلوبة", f"{total_needed} د.أ")
-    st.write("بناءً على السجلات المسجلة، يوضح هذا القسم إجمالي الالتزامات المالية للطالبات.")
+    st.subheader("📅 الفواتير المصدرة")
+    for bill in b_data:
+        with st.expander(f"فاتورة {bill['bill_month']} | {bill.get('sakanat',{}).get('name')} | {bill['total_amount']} د.أ"):
+            if bill['file_path']:
+                st.link_button("👁️ عرض الفاتورة الأصلية", supabase.storage.from_("student_files").get_public_url(bill['file_path']))
+            
+            st.markdown("**تعديل الفاتورة والحصص:**")
+            # نجلب قيود اليدجر الخاصة بهذه الفاتورة فقط
+            bill_ledger = [l for l in l_data if l['bill_id'] == bill['id']]
+            
+            with st.form(f"edit_bill_{bill['id']}"):
+                new_tot = st.number_input("قيمة الفاتورة الكلية", value=float(bill['total_amount']), min_value=0.0)
+                
+                new_shares = {}
+                for bl in bill_ledger:
+                    # نمنع التعديل إذا كانت الطالبة قد دفعت جزءاً (لحماية البيانات)
+                    paid_amt = float(bl.get('amount_paid', 0))
+                    disabled = paid_amt > 0
+                    std_name = bl.get('students', {}).get('name', 'N/A')
+                    help_t = "لا يمكن تعديل حصة مسددة جزئياً أو كلياً." if disabled else ""
+                    new_shares[bl['id']] = st.number_input(f"حصة {std_name} (دُفع منها: {paid_amt})", value=float(bl['amount_due']), disabled=disabled, help=help_t)
+                
+                sum_new_shares = sum(new_shares.values())
+                st.caption(f"مجموع الحصص المعدلة: {sum_new_shares:,.2f}")
+                
+                if st.form_submit_button("حفظ التعديلات 💾"):
+                    if abs(sum_new_shares - new_tot) > 0.01:
+                        st.error("المجموع لا يطابق!")
+                    else:
+                        supabase.table("electricity_bills").update({"total_amount": new_tot}).eq("id", bill['id']).execute()
+                        for bl_id, n_amt in new_shares.items():
+                            supabase.table("student_ledger").update({"amount_due": n_amt}).eq("id", bl_id).execute()
+                        log_action("تعديل فاتورة", f"تعديل فاتورة {bill['id']}")
+                        st.success("تم التعديل!")
+                        st.rerun()
 
-if st.button("🚪 خروج"):
-    st.session_state["logged_in"] = False
-    st.rerun()
+            st.markdown("---")
+            # الحذف المحمي بدبل كونفيرم
+            del_c1, del_c2 = st.columns(2)
+            check_del = del_c1.checkbox("أقر برغبتي بحذف الفاتورة وكل الذمم التابعة لها", key=f"chk_{bill['id']}")
+            if check_del:
+                if del_c2.button("🗑️ حذف نهائي", key=f"del_{bill['id']}", type="primary"):
+                    pwd_verify = st.text_input("أدخل كلمة مرور المدير للتأكيد:", type="password", key=f"pwd_{bill['id']}")
+                    if pwd_verify == SUPER_PWD or pwd_verify == ADMIN_PWD:
+                        supabase.table("electricity_bills").delete().eq("id", bill['id']).execute()
+                        log_action("حذف فاتورة", f"رقم {bill['id']}")
+                        st.rerun()
 
-st.caption(f"نظام سكنات شكّور | v{VERSION} | المطور: {DEV_NAME}")
+# ==========================================
+# 4. الدفع والتحصيل (تاريخ الدفعات والتنبيهات)
+# ==========================================
+with tabs[3]:
+    f_c1, f_c2 = st.columns(2)
+    s_fin = f_c1.selectbox("بحث عن طالبة:", ["الكل"] + [s['name'] for s in t_data])
+    
+    view_l = l_data
+    if s_fin != "الكل": view_l = [l for l in view_l if l.get('students') and l['students']['name'] == s_fin]
+    
+    today = datetime.date.today()
+    
+    for entry in view_l:
+        due_d = pd.to_datetime(entry['due_date']).date()
+        amt_due = float(entry.get('amount_due', 0))
+        amt_paid = float(entry.get('amount_paid', 0))
+        rem = round(amt_due - amt_paid, 2)
+        sts = entry['status']
+        
+        is_overdue = due_d < today and sts != 'paid'
+        box_class = "overdue" if is_overdue else ""
+        c_class = "paid" if sts == 'paid' else "partial" if sts == 'partial' else "pending"
+        
+        with st.container():
+            st.markdown(f"""
+                <div class="{box_class}" style="background:white; padding:15px; border-radius:10px; border-right:5px solid {'#E74C3C' if is_overdue else '#3498DB'}; margin-bottom:10px;">
+                    <div style="display:flex; justify-content:space-between;">
+                        <b>👤 {entry['students']['name'] if entry['students'] else 'مجهول'}</b>
+                        <span class="{c_class}">{sts.upper()}</span>
+                    </div>
+                    <p style="margin:5px 0 0 0; font-size:14px;">البند: {entry['type']} | استحقاق: {due_d} {'(متأخر ⚠️)' if is_overdue else ''}<br>
+                    المطلوب: {amt_due} | المدفوع: {amt_paid} | <b>المتبقي: {rem}</b></p>
+                </div>
+            """, unsafe_allow_html=True)
+            
+            act_c1, act_c2, act_c3 = st.columns([1,1,1])
+            
+            # تسجيل دفعة مع حفظ في Payment History
+            with act_c1.popover("💸 دفع / تسجيل"):
+                if rem > 0:
+                    # Max value fix + Safe float
+                    p_amt = st.number_input("المبلغ", min_value=0.01, max_value=float(rem), value=float(rem), step=1.0, key=f"pin_{entry['id']}")
+                    if st.button("تأكيد السداد", key=f"pbtn_{entry['id']}"):
+                        new_paid = min(amt_paid + p_amt, amt_due)
+                        new_sts = "paid" if new_paid >= amt_due else "partial"
+                        
+                        # تحديث الـ Ledger
+                        supabase.table("student_ledger").update({"amount_paid": new_paid, "status": new_sts}).eq("id", entry['id']).execute()
+                        # إدراج في سجل الدفعات History
+                        supabase.table("payments").insert({"ledger_id": entry['id'], "amount_paid": p_amt, "recorded_by": "Admin"}).execute()
+                        
+                        log_action("دفعة مالية", f"مبلغ {p_amt} من {entry['students']['name']}")
+                        st.rerun()
+                else: st.success("مسدد بالكامل.")
+            
+            # عرض سجل الدفعات لهذه الذمة
+            with act_c2.popover("📜 سجل الدفعات"):
+                entry_payments = [p for p in p_data if p['ledger_id'] == entry['id']]
+                if entry_payments:
+                    for p in entry_payments:
+                        p_date = pd.to_datetime(p['payment_date']).strftime("%Y-%m-%d %H:%M")
+                        st.caption(f"دُفع {p['amount_paid']} د.أ في {p_date}")
+                        # ميزة حذف الدفعة وإرجاع العداد (Edit Ledger/Undo)
+                        if st.button("🗑️ إلغاء هذه الدفعة", key=f"undo_p_{p['id']}"):
+                            # نخصم من المدفوع
+                            revert_paid = max(amt_paid - float(p['amount_paid']), 0)
+                            revert_sts = "paid" if revert_paid >= amt_due else "partial" if revert_paid > 0 else "pending"
+                            supabase.table("student_ledger").update({"amount_paid": revert_paid, "status": revert_sts}).eq("id", entry['id']).execute()
+                            supabase.table("payments").delete().eq("id", p['id']).execute()
+                            st.rerun()
+                else: st.info("لا توجد حركات دفع مسجلة.")
+
+            # WhatsApp مشفر
+            if rem > 0 and entry.get('students'):
+                msg = f"مرحباً {entry['students']['name']}، تذكير بقسط ({entry['type']}) بقيمة {rem} د.أ المستحق بتاريخ {due_d}."
+                wa_url = f"https://wa.me/962{str(entry['students']['phone'])[1:]}?text={urllib.parse.quote(msg)}"
+                act_c3.link_button("📱 واتساب", wa_url)
