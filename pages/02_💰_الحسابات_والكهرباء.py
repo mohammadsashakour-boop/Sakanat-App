@@ -10,7 +10,11 @@ VERSION = "2.0 Enterprise Strict"
 ADMIN_PWD = "Shakur2026!"
 SUPER_PWD = "ShakurMaster!"
 
-st.set_page_config(page_title="النظام المالي الصارم v2.0", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(
+    page_title="النظام المالي  v2.0",
+    layout="centered",
+    initial_sidebar_state="collapsed"
+)
 
 try:
     URL = st.secrets["SUPABASE_URL"]
@@ -24,30 +28,31 @@ except Exception as e:
 st.markdown("""
 <style>
 @media (max-width: 768px) {
-    section[data-testid="stSidebar"] {
-        display: none !important;
-        visibility: hidden !important;
-        width: 0 !important;
-        position: absolute !important;
-        left: -9999px !important;
-    }
 
-    [data-testid="collapsedControl"] {
-        display: none !important;
-    }
-
-    div[data-testid="stAppViewContainer"] {
-        padding-left: 0rem !important;
-        padding-right: 0rem !important;
-    }
-
-    header, #MainMenu {
-        display: none !important;
+    html, body {
+        overflow-x: hidden !important;
     }
 
     .stApp {
-        margin-top: -60px !important;
+        padding: 0 !important;
+        margin: 0 !important;
     }
+
+    div.block-container {
+        padding-left: 10px !important;
+        padding-right: 10px !important;
+    }
+
+    /* منع التبويبات من التكسير */
+    div[data-baseweb="tab-list"] {
+        flex-wrap: wrap !important;
+    }
+
+    /* إصلاح الجداول */
+    .stDataFrame {
+        font-size: 12px !important;
+    }
+
 }
 </style>
 """, unsafe_allow_html=True)
