@@ -65,7 +65,7 @@ def get_clean_data():
 s_data, t_data, b_data, l_data, p_data = get_clean_data()
 
 # --- 4. واجهة النظام الرئيسية ---
-st.title("💼 الواجهة الإساسية ")
+st.title("💼النظام المالي ")
 st.caption(f"المسؤول الحالي: {st.session_state['user_name']} | النسخة {VERSION}")
 
 tabs = st.tabs(["📊 لوحة التحكم", "🧾 إصدار مطالبة", "🗓️ إدارة الفواتير", "💸 تحصيل الذمم", "📜 السجل والأرشيف"])
