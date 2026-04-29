@@ -6,15 +6,11 @@ import urllib.parse
 import uuid
 
 # --- 1. الإعدادات والأمان ---
-VERSION = "2.0 Enterprise Strict"
+VERSION = "2.1 Enterprise Strict"
 ADMIN_PWD = "Shakur2026!"
 SUPER_PWD = "ShakurMaster!"
 
-st.set_page_config(
-    page_title="النظام المالي  v2.0",
-    layout="centered",
-    initial_sidebar_state="collapsed"
-)
+st.set_page_config(page_title="النظام المالي الصارم v2.1", layout="wide", initial_sidebar_state="collapsed")
 
 try:
     URL = st.secrets["SUPABASE_URL"]
@@ -24,39 +20,28 @@ except Exception as e:
     st.error(f"⚠️ يرجى ضبط Secrets: {e}")
     st.stop()
 
-# --- CSS لإبادة الشاشة الجانبية بالكامل على الهاتف ---
+# --- CSS لإبادة القائمة الجانبية بالكامل على الهاتف ---
 st.markdown("""
-<style>
-@media (max-width: 768px) {
-
-    html, body {
-        overflow-x: hidden !important;
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Cairo&display=swap');
+    * { font-family: 'Cairo', sans-serif !important; direction: rtl; text-align: right; }
+    
+    @media (max-width: 768px) { 
+        [data-testid="stSidebar"] { display: none !important; width: 0 !important; overflow: hidden !important; }
+        [data-testid="collapsedControl"] { display: none !important; opacity: 0 !important; pointer-events: none !important; }
+        header[data-testid="stHeader"] { display: none !important; height: 0 !important; }
+        .stApp > header { display: none !important; }
+        #MainMenu { display: none !important; }
+        .stApp { margin-top: -60px !important; }
     }
-
-    .stApp {
-        padding: 0 !important;
-        margin: 0 !important;
-    }
-
-    div.block-container {
-        padding-left: 10px !important;
-        padding-right: 10px !important;
-    }
-
-    /* منع التبويبات من التكسير */
-    div[data-baseweb="tab-list"] {
-        flex-wrap: wrap !important;
-    }
-
-    /* إصلاح الجداول */
-    .stDataFrame {
-        font-size: 12px !important;
-    }
-
-}
-</style>
-""", unsafe_allow_html=True)
-
+    
+    .overdue { border: 2px solid #E74C3C !important; background-color: #FDEDEC !important; }
+    .stDataFrame { direction: ltr; }
+    .pending { color: #E74C3C; font-weight: bold; }
+    .partial { color: #F39C12; font-weight: bold; }
+    .paid { color: #27AE60; font-weight: bold; }
+    </style>
+    """, unsafe_allow_html=True)
 
 def log_action(action, details):
     try: supabase.table("audit_logs").insert({"action": action, "details": details}).execute()
@@ -123,7 +108,7 @@ with tabs[0]:
     st.dataframe(pd.DataFrame(apt_report), use_container_width=True)
 
 # ==========================================
-# 2. إصدار الفواتير 
+# 2. إصدار الفواتير والمطالبات (تمت إضافة نوع المطالبة)
 # ==========================================
 with tabs[1]:
     apt_sel = st.selectbox("🏘️ الشقة المستهدفة:", [s['name'] for s in s_data], key="new_bill_apt")
@@ -132,11 +117,14 @@ with tabs[1]:
     
     if stds_in:
         with st.form("new_bill_form"):
+            # الميزة الجديدة: نوع المطالبة
+            bill_type_sel = st.selectbox("📌 نوع المطالبة", ["كهرباء", "إيجار", "صيانة", "إنترنت", "خدمات أخرى"])
+            
             col_b1, col_b2, col_b3 = st.columns(3)
-            total_v = col_b1.number_input("قيمة الفاتورة (دينار)", min_value=0.0, step=1.0)
+            total_v = col_b1.number_input("قيمة المطالبة (دينار)", min_value=0.0, step=1.0)
             month_v = col_b2.selectbox("شهر مالي:", [f"2026-{m:02d}" for m in range(1, 13)])
             due_v = col_b3.date_input("تاريخ الاستحقاق", datetime.date.today())
-            bill_file = st.file_uploader("صورة الفاتورة", type=['jpg', 'png', 'pdf'])
+            bill_file = st.file_uploader("صورة الفاتورة/المستند", type=['jpg', 'png', 'pdf'])
             
             st.markdown("---")
             st.write("⚖️ **توزيع الحصص:**")
@@ -149,13 +137,11 @@ with tabs[1]:
                     shares[std['id']] = st.number_input(f"حصة {std['name']}", value=def_share, key=f"n_shr_{std['id']}", step=0.5)
             
             total_dist = sum(shares.values())
-            st.write(f"الموزع: **{total_dist:,.2f}** | الفاتورة: **{total_v:,.2f}**")
+            st.write(f"الموزع: **{total_dist:,.2f}** | المطالبة: **{total_v:,.2f}**")
             
-            if st.form_submit_button("إصدار الفاتورة ✅"):
+            if st.form_submit_button("إصدار وتثبيت ✅"):
                 if abs(total_dist - total_v) > 0.01:
-                    st.error("⚠️ إجمالي الحصص لا يطابق قيمة الفاتورة!")
-                elif any(b['sakan_id'] == target_s['id'] and b['bill_month'] == month_v for b in b_data):
-                    st.error("⚠️ توجد فاتورة لهذه الشقة في نفس الشهر المالي!")
+                    st.error("⚠️ إجمالي الحصص لا يطابق قيمة المطالبة!")
                 else:
                     try:
                         f_path = None
@@ -163,40 +149,47 @@ with tabs[1]:
                             f_path = f"bill_{target_s['id']}_{month_v}_{uuid.uuid4().hex[:8]}.{bill_file.name.split('.')[-1]}"
                             supabase.storage.from_("student_files").upload(f_path, bill_file.read())
                         
-                        # --- صائد الأخطاء الحقيقي ---
                         bill_res = supabase.table("electricity_bills").insert({
-                            "sakan_id": target_s['id'], "total_amount": total_v, "bill_month": month_v, "file_path": f_path
+                            "sakan_id": target_s['id'], "total_amount": total_v, "bill_month": month_v, 
+                            "file_path": f_path, "bill_type": bill_type_sel
                         }).execute()
                         bill_id = bill_res.data[0]['id']
                         
-                        l_entries = [{"student_id": sid, "bill_id": bill_id, "type": "كهرباء", "amount_due": amt, "bill_month": month_v, "due_date": str(due_v), "status": "pending"} for sid, amt in shares.items()]
+                        l_entries = [{"student_id": sid, "bill_id": bill_id, "type": bill_type_sel, "amount_due": amt, "bill_month": month_v, "due_date": str(due_v), "status": "pending"} for sid, amt in shares.items()]
                         supabase.table("student_ledger").insert(l_entries).execute()
                         
-                        log_action("إصدار فاتورة", f"شقة {apt_sel} - شهر {month_v}")
+                        log_action("إصدار فاتورة", f"{bill_type_sel} - شقة {apt_sel} - شهر {month_v}")
                         st.success("تم الإصدار بنجاح!")
                         st.rerun()
                     except Exception as db_err:
                         st.error(f"🛑 تم إيقاف الكراش! تفاصيل خطأ الداتا بيس: {db_err}")
 
 # ==========================================
-# 3. إدارة الفواتير
+# 3. إدارة الفواتير (تم إصلاح مشكلة Duplicate Element ID)
 # ==========================================
 with tabs[2]:
     st.subheader("📅 الفواتير المصدرة")
     for bill in b_data:
-        with st.expander(f"فاتورة {bill['bill_month']} | {bill.get('sakanat',{}).get('name')} | {bill['total_amount']} د.أ"):
+        b_type = bill.get('bill_type', 'كهرباء')
+        with st.expander(f"{b_type} | شهر {bill['bill_month']} | {bill.get('sakanat',{}).get('name')} | {bill['total_amount']} د.أ"):
             if bill['file_path']:
-                st.link_button("👁️ عرض الفاتورة", supabase.storage.from_("student_files").get_public_url(bill['file_path']))
+                st.link_button("👁️ عرض المستند", supabase.storage.from_("student_files").get_public_url(bill['file_path']))
             
             bill_ledger = [l for l in l_data if l['bill_id'] == bill['id']]
             with st.form(f"edit_bill_{bill['id']}"):
-                new_tot = st.number_input("قيمة الفاتورة الكلية", value=float(bill['total_amount']), min_value=0.0)
+                new_tot = st.number_input("تعديل قيمة الفاتورة الكلية", value=float(bill['total_amount']), min_value=0.0)
                 new_shares = {}
                 for bl in bill_ledger:
                     paid_amt = float(bl.get('amount_paid', 0))
                     disabled = paid_amt > 0
                     std_name = bl.get('students', {}).get('name', 'N/A')
-                    new_shares[bl['id']] = st.number_input(f"حصة {std_name} (دُفع: {paid_amt})", value=float(bl['amount_due']), disabled=disabled)
+                    # تم إصلاح الخطأ عبر إعطاء key فريد لكل حقل
+                    new_shares[bl['id']] = st.number_input(
+                        f"حصة {std_name} (دُفع: {paid_amt})", 
+                        value=float(bl['amount_due']), 
+                        disabled=disabled,
+                        key=f"ed_share_{bill['id']}_{bl['id']}" 
+                    )
                 
                 sum_new_shares = sum(new_shares.values())
                 st.caption(f"مجموع الحصص المعدلة: {sum_new_shares:,.2f}")
@@ -209,7 +202,7 @@ with tabs[2]:
                             supabase.table("electricity_bills").update({"total_amount": new_tot}).eq("id", bill['id']).execute()
                             for bl_id, n_amt in new_shares.items():
                                 supabase.table("student_ledger").update({"amount_due": n_amt}).eq("id", bl_id).execute()
-                            log_action("تعديل فاتورة", f"تعديل فاتورة {bill['id']}")
+                            log_action("تعديل فاتورة", f"تعديل {b_type} رقم {bill['id']}")
                             st.success("تم التعديل!")
                             st.rerun()
                         except Exception as e:
