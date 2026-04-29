@@ -4,15 +4,15 @@ import pandas as pd
 import datetime
 
 # --- 1. الإعدادات وهوية النظام ---
-VERSION = "4.5 SaaS Fortress Edition"
-st.set_page_config(page_title="نظام شكّور المالي Pro", layout="wide", initial_sidebar_state="collapsed")
+VERSION = "4.5 SaaS  Edition"
+st.set_page_config(page_title="نظام السكن المالي Pro", layout="wide", initial_sidebar_state="collapsed")
 
 # نظام الدخول بالاسم لضبط المسؤولية والرقابة
 if "user_name" not in st.session_state:
     st.session_state["user_name"] = None
 
 if not st.session_state["user_name"]:
-    st.markdown("<h2 style='text-align: center; font-family: Cairo;'>🔐 بوابة الإدارة المالية المحصنة</h2>", unsafe_allow_html=True)
+    st.markdown("<h2 style='text-align: center; font-family: Cairo;'>🔐  الإدارة المالية </h2>", unsafe_allow_html=True)
     _, col_login, _ = st.columns([1, 1.5, 1])
     with col_login:
         name_input = st.text_input("اسم المستخدم للرقابة", placeholder="من يقوم بالعملية حالياً؟")
@@ -65,7 +65,7 @@ def get_clean_data():
 s_data, t_data, b_data, l_data, p_data = get_clean_data()
 
 # --- 4. واجهة النظام الرئيسية ---
-st.title("💼 المركز المالي الشامل")
+st.title("💼 الواجهة الإساسية ")
 st.caption(f"المسؤول الحالي: {st.session_state['user_name']} | النسخة {VERSION}")
 
 tabs = st.tabs(["📊 لوحة التحكم", "🧾 إصدار مطالبة", "🗓️ إدارة الفواتير", "💸 تحصيل الذمم", "📜 السجل والأرشيف"])
