@@ -8,7 +8,7 @@ import uuid
 # --- 1. الإعدادات ---
 VERSION = "2.2 Pro Management"
 ADMIN_PWD = "Shakur2026!"
-SUPER_PWD = "ShakurMaster!"
+SUPER_PWD = "Shakur2026!"
 
 st.set_page_config(page_title="نظام شكّور المالي Pro", layout="wide", initial_sidebar_state="collapsed")
 
@@ -141,35 +141,78 @@ with tabs[1]:
                 except Exception as e:
                     st.error(f"خطأ: {e}")
 
+
 # ==========================================
-# التبويب 3: إدارة العمليات (بدون Expanders)
+# التبويب 3: إدارة العمليات (النسخة المحسنة v2.3)
 # ==========================================
 with tabs[2]:
-    st.subheader("🗓️ العمليات الأخيرة")
-    for bill in b_data:
-        is_owner_bill = "بذمة المالك" in (bill.get('notes') or "")
-        card_style = "owner-bill" if is_owner_bill else ""
-        
-        st.markdown(f"""
-            <div class="bill-card {card_style}">
-                <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <h3 style="margin:0;">{bill['bill_type']} - {bill.get('sakanat',{}).get('name')}</h3>
-                    <span style="font-weight:bold; color:#2e86de;">{bill['total_amount']} د.أ</span>
+    st.subheader("🗓️ سجل العمليات المالية")
+    
+    if not b_data:
+        st.info("لا توجد فواتير أو عمليات مسجلة حالياً.")
+    else:
+        for bill in b_data:
+            # 1. جلب البيانات بأمان لمنع الـ KeyError للأبد
+            b_type = bill.get('bill_type', 'كهرباء')
+            b_total = bill.get('total_amount', 0)
+            b_month = bill.get('bill_month', 'غير محدد')
+            b_notes = bill.get('notes', "")
+            sakan_info = bill.get('sakanat', {})
+            sakan_name = sakan_info.get('name', 'شقة غير معروفة') if sakan_info else 'شقة غير معروفة'
+            
+            # 2. تحديد نوع الفاتورة (مالك أم طالبات)
+            is_owner_bill = "بذمة المالك" in b_notes
+            card_class = "owner-bill" if is_owner_bill else ""
+            status_text = "✅ مغطاة من المالك" if is_owner_bill else "⚠️ موزعة على الطالبات"
+            
+            # 3. تصميم البطاقة (Card UI) المحاذية لليمين
+            st.markdown(f"""
+                <div class="bill-card {card_class}" style="
+                    background: white; 
+                    padding: 15px; 
+                    border-radius: 10px; 
+                    border-right: 8px solid {'#10ac84' if is_owner_bill else '#2e86de'};
+                    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+                    margin-bottom: 10px;
+                ">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <span style="font-size: 1.1em; font-weight: bold;">{b_type} - {sakan_name}</span>
+                        <span style="color: #2e86de; font-weight: bold; font-size: 1.2em;">{b_total:,.2f} د.أ</span>
+                    </div>
+                    <div style="margin-top: 10px; font-size: 0.9em; color: #636e72;">
+                        📅 الشهر المالي: {b_month} | 📌 الحالة: {status_text}
+                    </div>
                 </div>
-                <p style="margin:10px 0; color:#636e72;">
-                    الشهر: {bill['bill_month']} | الحالة: {"✅ مغطاة من المالك" if is_owner_bill else "⚠️ موزعة على الطالبات"}
-                </p>
-            </div>
-        """, unsafe_allow_html=True)
-        
-        # أزرار الإدارة أسفل البطاقة مباشرة
-        c_act1, c_act2, _ = st.columns([1, 1, 3])
-        if c_act1.button("🗑️ حذف وإلغاء", key=f"del_{bill['id']}", type="primary"):
-            # الحذف الذكي (يمسح الفاتورة والديون التابعة لها)
-            supabase.table("electricity_bills").delete().eq("id", bill['id']).execute()
-            log_action("حذف فاتورة", f"تم إلغاء فاتورة {bill['bill_type']} رقم {bill['id']}")
-            st.rerun()
-
+            """, unsafe_allow_html=True)
+            
+            # 4. أزرار التحكم (حذف ذكي + عرض)
+            c_act1, c_act2, _ = st.columns([1, 1, 3])
+            
+            # زر الحذف الذكي (Smart Delete)
+            if c_act1.button("🗑️ حذف نهائي", key=f"del_pro_{bill['id']}", type="primary", use_container_width=True):
+                try:
+                    # قبل الحذف: نسجل تفاصيل الفاتورة في الـ History (audit_logs)
+                    history_details = f"حذف {b_type} لشقة {sakan_name} بمبلغ {b_total} لشهر {b_month}"
+                    log_action("حذف وإلغاء", history_details)
+                    
+                    # تنفيذ الحذف (بسبب ON DELETE CASCADE سيتم حذف الذمم المرتبطة تلقائياً)
+                    supabase.table("electricity_bills").delete().eq("id", bill['id']).execute()
+                    
+                    st.toast(f"تم حذف الفاتورة ونقلها للسجل التاريخي", icon="🗑️")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"فشل الحذف: {e}")
+            
+            if c_act2.button("👁️ تفاصيل", key=f"view_{bill['id']}", use_container_width=True):
+                # عرض سريع للذمم المرتبطة بهذه الفاتورة
+                relevant_ledger = [l for l in l_data if l.get('bill_id') == bill['id']]
+                if relevant_ledger:
+                    for entry in relevant_ledger:
+                        st.caption(f"👤 {entry['students']['name']}: {entry['amount_due']} د.أ ({entry['status']})")
+                else:
+                    st.caption("لا توجد ذمم مرتبطة (فاتورة مالك)")
+            
+            st.markdown("<br>", unsafe_allow_html=True)
 # ==========================================
 # التبويب 4: التحصيل (جداول احترافية)
 # ==========================================
