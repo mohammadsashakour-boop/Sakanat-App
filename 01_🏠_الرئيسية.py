@@ -178,6 +178,19 @@ with tab1:
 # --- التبويب الثاني: إضافة طالبة جديدة ---
 with tab2:
     st.subheader("➕ تسجيل طالبة جديدة")
+    
+    # حل مشكلة الشاشة الجانبية في الموبايل لهذا الملف
+    st.markdown("""
+        <style>
+        @media (max-width: 768px) { 
+            [data-testid="stSidebar"] { display: none !important; width: 0 !important; }
+            [data-testid="collapsedControl"] { display: none !important; }
+            header[data-testid="stHeader"] { display: none !important; }
+            .stApp { margin-top: -60px !important; }
+        }
+        </style>
+    """, unsafe_allow_html=True)
+
     with st.form("add_student_form", clear_on_submit=True):
         col_n1, col_n2 = st.columns(2)
         new_name = col_n1.text_input("اسم الطالبة المزدوج*")
@@ -192,21 +205,33 @@ with tab2:
         
         if st.form_submit_button("تسجيل الطالبة ✅"):
             if new_name and new_phone:
-                target_apt = next(item for item in s_list if item["name"] == new_apt_name)
-                
-                # رفع الملفات
-                p_id = upload_file(f_id, new_name, "id") if f_id else None
-                p_con = upload_file(f_con, new_name, "contract") if f_con else None
-                p_kum = upload_file(f_kum, new_name, "kumbiala") if f_kum else None
-                
-                supabase.table("students").insert({
-                    "name": new_name, "phone": new_phone, "notes": new_notes,
-                    "sakan_id": target_apt['id'], "is_deleted": False,
-                    "file_id": p_id, "file_contract": p_con, "file_kumbiala": p_kum
-                }).execute()
-                st.success("تم تسجيل الطالبة بنجاح!")
-                st.rerun()
-            else: st.error("يرجى ملء الحقول المطلوبة (*)")
+                try:
+                    target_apt = next(item for item in s_list if item["name"] == new_apt_name)
+                    
+                    # رفع الملفات (تأكد من وجود دالة upload_file في ملفك)
+                    p_id = upload_file(f_id, new_name, "id") if f_id else None
+                    p_con = upload_file(f_con, new_name, "contract") if f_con else None
+                    p_kum = upload_file(f_kum, new_name, "kumbiala") if f_kum else None
+                    
+                    # محاولة الإدخال الآمنة
+                    supabase.table("students").insert({
+                        "name": new_name, 
+                        "phone": new_phone, 
+                        "notes": new_notes,
+                        "sakan_id": target_apt['id'], 
+                        "is_deleted": False,
+                        "file_id": p_id, 
+                        "file_contract": p_con, 
+                        "file_kumbiala": p_kum
+                    }).execute()
+                    
+                    st.success("تم تسجيل الطالبة بنجاح!")
+                    st.rerun()
+                except Exception as db_err:
+                    # إذا حدث خطأ، سيظهر لك السبب الدقيق هنا بدل الكراش
+                    st.error(f"🛑 خطأ في قاعدة البيانات: {db_err}")
+            else: 
+                st.error("يرجى ملء الحقول المطلوبة (*)")
 
 # --- التبويب الثالث: سلة المحذوفات ---
 with tab3:
